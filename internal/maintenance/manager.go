@@ -29,6 +29,8 @@ func (m *Manager) Create(req model.MaintenanceCreateRequest) (*model.Maintenance
 	if req.Mode != model.MaintenanceDrain && req.Mode != model.MaintenanceForce {
 		return nil, ErrInvalidWindow
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	existing, err := m.store.ListMaintenanceWindows(req.ResourcePath)
 	if err != nil {
 		return nil, err
@@ -39,13 +41,12 @@ func (m *Manager) Create(req model.MaintenanceCreateRequest) (*model.Maintenance
 		}
 		return nil, ErrWindowOverlap
 	}
-	window := &model.MaintenanceWindow{ResourcePath: req.ResourcePath, Mode: req.Mode, StartAt: req.StartAt, EndAt: req.EndAt, Reason: req.Reason, Operator: req.Operator, Status: statusFor(req.StartAt, req.EndAt, time.Now().UTC()), CreatedAt: time.Now().UTC()}
+	now := time.Now().UTC()
+	window := &model.MaintenanceWindow{ResourcePath: req.ResourcePath, Mode: req.Mode, StartAt: req.StartAt, EndAt: req.EndAt, Reason: req.Reason, Operator: req.Operator, Status: statusFor(req.StartAt, req.EndAt, now), CreatedAt: now}
 	if err := m.store.CreateMaintenanceWindow(window); err != nil {
 		return nil, err
 	}
-	m.mu.Lock()
 	m.windows[window.ID] = *window
-	m.mu.Unlock()
 	_ = m.store.RecordCoordinationEvent("maintenance_created", window.ResourcePath, window.Operator, window.Reason)
 	return window, nil
 }
